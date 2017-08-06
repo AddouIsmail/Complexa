@@ -9,13 +9,16 @@ import org.apache.hadoop.fs.shell.Tail
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.SQLImplicits$
 import org.apache.spark.sql.DataFrame
+import java.io.IOException
 
 case class tableDF(var df : DataFrame, table_name : String, parent_name : String )
 case class SelectStatement(attribute : String, attribute_path : Array[String], foreign_key: String,  table_name : String, parent_name: String)
 
 // node ( node's name, parent's name ) 
-case class table(node : (String, String),nested_tables : Set[table]) 
-
+case class Node(node : String, nested_tables : Array[Node]) 
+class treeFormatException(message: String) extends Exception(message){
+  
+}
 class SchemaPattern(hdfsPath : String, masterUrl : String, nodesNumber : Int) {
        val conf = new SparkConf().setAppName("Spark Pi").setMaster(masterUrl)
       val sc = new SparkContext(conf)
@@ -85,12 +88,12 @@ class SchemaPattern(hdfsPath : String, masterUrl : String, nodesNumber : Int) {
     transposed_array
   }
   
-  def detectTree( path_arrays : Array[Array[(String, String)]] ) : table = {
+  def detectTree( path_arrays : Array[Array[(String, String)]] ) : Node = { 
     val tree = transposeArray(path_arrays).map(p => p.distinct)
     for ( item <- tree.reverse ) {
       item.map( p => p._1 ) 
     }
-    new table(("",""),null)
+    new Node("",null)
   }
   
   def explodeNestedTables(purged_tables : ArrayBuffer[ArrayBuffer[String]], dataframes : ArrayBuffer[DataFrame] )  {
@@ -99,13 +102,67 @@ class SchemaPattern(hdfsPath : String, masterUrl : String, nodesNumber : Int) {
     )
   }
 
-  //Fonction récursive
-  def getRequest(statements : Array[SelectStatement]){
-    val attributes = statements.map( p => p.attribute_path )
+     def getRequest(statements : Array[SelectStatement]):Node = {
+       statements.foreach(println)
+       println("1. getRequest ______________________________")
+       val paths = statements.map( p => p.attribute_path ).map(p => toNode(p))
+       println("2. getRequest ______________________________")
+       paths.reduceLeft((X,Y) => merge(X,Y))
+     }
+    
+    def toNode(arraypath : Array[String]): Node = {
+      //println("1. ToNode______________________________")
+      if(arraypath.tail.nonEmpty){
+        //println("1.1 ToNode ______________________________")
+        val childnode = toNode(arraypath.tail)
+        //println("1.2 ToNode ______________________________")
+        new Node(arraypath.head, Array(childnode))
+      }else
+      //println("2. ToNode ______________________________")
+      new Node(arraypath.head,null) 
+    }
+    
+    def printTree(node : Node){
+        println(node.node)
+        println("================")
+        node.nested_tables.map(printTree(_))
+    }
+     
+    def mergeChilds( leftChilds : Array[Node], rightChild : Array[Node]): Array[Node]={
+      println("leftChilds's number ="+leftChilds.size)
+      println("1. MergeChilds______________________________")
+      if (leftChilds.filter(p => p.node == rightChild.head.node).isEmpty){
+        println("1.1 MergeChilds______________________________")
+          leftChilds ++ rightChild
+        }
+      else{
+        println("1.2 MergeChilds______________________________")
+        leftChilds.map( p => {
+            if(p.node == rightChild.head.node ){
+              println("merging p and rightchild.head :"+rightChild.head)
+              merge(p,rightChild.head)
+            }else{
+              p
+            }
+        })        
+      }
+    }
+   
+    def merge(node1 : Node, node2 : Node) : Node = {
+      println("1. Merge______________________________")
+        if(node1.node != node2.node) {
+          println("1.1 exception________________________")
+          throw new treeFormatException("cannot merge two trees with different root")
+        }
+      println("2. Merge______________________________"+node1.nested_tables)  
+      
+      Node(node1.node, mergeChilds(node1.nested_tables, node2.nested_tables))
+    }
+    
 //    val table_paths = purgeTables(attributes)
 //    //table_paths.map( p => df.select($"reclocAmd",explode($"passengersList")).show
 //    
 //        
     //val flattened = df.select($"name", explode($"schools").as("schools_flat"))
-  }
+  
 }

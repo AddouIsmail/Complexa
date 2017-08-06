@@ -40,7 +40,9 @@ class complexaServlet extends ComplexaStack  with JacksonJsonSupport with CorsSu
   post("/"){
         
         val selected = parsedBody.extract[Array[SelectStatement]]
-        selected.foreach(println)
+        val node = sch.getRequest(selected)
+        //yallah print tree
+        sch.printTree(node)
         response.addHeader("ACK", "GOT IT")
   }
 
